@@ -17,10 +17,25 @@ with open("coco.names", "r") as f:
 input_size = 416
 confidence_threshold = 0.5
 nms_threshold = 0.4
-pseudo_label_threshold = 0.7  # Confidence threshold for generating pseudo-labels
+pseudo_label_threshold = 0.7  # Base confidence threshold for generating pseudo-labels
+minority_threshold = 0.55     # Lower threshold used for under-represented classes
 
 pseudo_label_dir = "pseudo_labels"
 os.makedirs(pseudo_label_dir, exist_ok=True)
+
+# Running count of pseudo-labels saved per class (used for class-aware thresholds)
+class_label_counts = {}
+
+def class_threshold(class_id):
+    """Class-aware threshold: classes with fewer pseudo-labels than the
+    current average get a lower threshold, so rare classes are not
+    crowded out by frequent ones."""
+    if not class_label_counts:
+        return pseudo_label_threshold
+    mean_count = sum(class_label_counts.values()) / len(class_label_counts)
+    if class_label_counts.get(class_id, 0) < mean_count:
+        return max(minority_threshold, confidence_threshold)
+    return pseudo_label_threshold
 
 def draw_bounding_boxes(img, boxes, confidences, class_ids):
     for i in range(len(boxes)):
@@ -32,12 +47,21 @@ def draw_bounding_boxes(img, boxes, confidences, class_ids):
         cv2.putText(img, f"{label}: {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
 def generate_pseudo_label(image, boxes, confidences, class_ids, save_dir, filename):
-    with open(os.path.join(save_dir, filename.replace('.jpg', '.txt')), 'w') as f:
-        for i in range(len(boxes)):
-            if confidences[i] >= pseudo_label_threshold:
-                x, y, w, h = boxes[i]
-                label = f"{class_ids[i]} {(x + w / 2) / input_size} {(y + h / 2) / input_size} {w / input_size} {h / input_size}\n"
-                f.write(label)
+    """Save a clean frame and its YOLO-format pseudo-labels.
+    Box coordinates are normalised by the frame size, as YOLO expects."""
+    height, width = image.shape[:2]
+    lines = []
+    for i in range(len(boxes)):
+        cid = int(class_ids[i])
+        if confidences[i] >= class_threshold(cid):
+            x, y, w, h = boxes[i]
+            x_c = min(max((x + w / 2) / width, 0.0), 1.0)
+            y_c = min(max((y + h / 2) / height, 0.0), 1.0)
+            lines.append(f"{cid} {x_c:.6f} {y_c:.6f} {min(w / width, 1.0):.6f} {min(h / height, 1.0):.6f}\n")
+            class_label_counts[cid] = class_label_counts.get(cid, 0) + 1
+    if lines:
+        with open(os.path.join(save_dir, filename.replace('.jpg', '.txt')), 'w') as f:
+            f.writelines(lines)
         cv2.imwrite(os.path.join(save_dir, filename), image)
 
 def process_frame(frame):
@@ -81,8 +105,9 @@ def run_real_time_detection():
         if not ret:
             break
         boxes, confidences, class_ids = process_frame(frame)
+        # Save the clean frame before boxes are drawn on it
+        generate_pseudo_label(frame.copy(), boxes, confidences, class_ids, pseudo_label_dir, f"frame_{frame_id}.jpg")
         draw_bounding_boxes(frame, boxes, confidences, class_ids)
-        generate_pseudo_label(frame, boxes, confidences, class_ids, pseudo_label_dir, f"frame_{frame_id}.jpg")
         cv2.imshow('YOLOv3 Real-Time Detection', frame)
         frame_id += 1
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -101,8 +126,9 @@ def run_video_detection(video_path):
         if not ret:
             break
         boxes, confidences, class_ids = process_frame(frame)
+        # Save the clean frame before boxes are drawn on it
+        generate_pseudo_label(frame.copy(), boxes, confidences, class_ids, pseudo_label_dir, f"frame_{frame_id}.jpg")
         draw_bounding_boxes(frame, boxes, confidences, class_ids)
-        generate_pseudo_label(frame, boxes, confidences, class_ids, pseudo_label_dir, f"frame_{frame_id}.jpg")
         cv2.imshow('YOLOv3 Video Detection', frame)
         frame_id += 1
         if cv2.waitKey(1) & 0xFF == ord('q'):

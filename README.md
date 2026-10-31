@@ -53,16 +53,14 @@ To counter the effects of class imbalance, this project implements a technique k
 
  **Install Dependencies**:
    ```bash
-   pip install opencv-python-headless==4.5.1.48 numpy tk
+   pip install -r requirements.txt
    ```
+   Note: use `opencv-python`, not `opencv-python-headless`. The headless build has no `cv2.imshow`, so the detection window would not open. Tkinter ships with most Python installers.
 
- **Download YOLOv3 Weights**:
-   - Download the pre-trained YOLOv3 weights.
-   - Place the `yolov3.weights` file in the project directory.
-
- **Download COCO Class Names**:
-   - Download the `coco.names` file.
-   - Place the `coco.names` file in the project directory.
+ **Download the model files** (from the official Darknet sources) and place all three in the project directory:
+   - `yolov3.weights`: https://pjreddie.com/media/files/yolov3.weights (about 240 MB)
+   - `yolov3.cfg`: https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3.cfg
+   - `coco.names`: https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names
 
 ## Usage
 
@@ -135,17 +133,23 @@ def select_option():
 
 ### Class-Aware Pseudo-Labeling
 
-To address class imbalance, pseudo-labels are generated during the detection process. This involves identifying high-confidence detections and using them to create additional training data, particularly for underrepresented classes. The pseudo-labels are stored and can be used to fine-tune the model, helping it learn to detect minority classes more effectively.
+Each confident detection can be saved as a pseudo-label in YOLO format (`class x_center y_center width height`, normalised by the frame size), together with a clean copy of the frame (saved before boxes are drawn).
+
+To make this class-aware, the script keeps a running count of pseudo-labels saved for each class:
+
+- Classes with **fewer** pseudo-labels than the current average use a lower threshold (`minority_threshold = 0.55`).
+- Other classes use the base threshold (`pseudo_label_threshold = 0.7`).
+
+This lets rare classes contribute more pseudo-labels instead of being crowded out by frequent classes such as "person". The pseudo-labels are saved to `pseudo_labels/` and can be used later to fine-tune a model. Fine-tuning itself is not part of this repository.
 
 ```python
-def generate_pseudo_label(image, boxes, confidences, class_ids, save_dir, filename):
-    with open(os.path.join(save_dir, filename.replace('.jpg', '.txt')), 'w') as f:
-        for i in range(len(boxes)):
-            if confidences[i] >= pseudo_label_threshold:
-                x, y, w, h = boxes[i]
-                label = f"{class_ids[i]} {(x + w / 2) / input_size} {(y + h / 2) / input_size} {w / input_size} {h / input_size}\n"
-                f.write(label)
-        cv2.imwrite(os.path.join(save_dir, filename), image)
+def class_threshold(class_id):
+    if not class_label_counts:
+        return pseudo_label_threshold
+    mean_count = sum(class_label_counts.values()) / len(class_label_counts)
+    if class_label_counts.get(class_id, 0) < mean_count:
+        return max(minority_threshold, confidence_threshold)
+    return pseudo_label_threshold
 ```
 
 ## Challenges and Considerations
