@@ -1,5 +1,7 @@
-### Yolov3 Config: https://drive.google.com/file/d/1z3g7fMj3ubx1GGO5cSbl3adY_bCcmED3/view?usp=sharing
+# YOLOv3 Downloadables
 
-### coco.names: https://drive.google.com/file/d/1QmJin0Y0ASB5Kn9XCkgnQkcS2wPAnvRj/view?usp=sharing
+Download these three files from the official Darknet sources and place them in the project directory:
 
-### Yolov3 Weights: https://drive.google.com/file/d/1QmJin0Y0ASB5Kn9XCkgnQkcS2wPAnvRj/view?usp=sharing
+- **yolov3.weights**: https://pjreddie.com/media/files/yolov3.weights (about 240 MB)
+- **yolov3.cfg**: https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3.cfg
+- **coco.names**: https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names
