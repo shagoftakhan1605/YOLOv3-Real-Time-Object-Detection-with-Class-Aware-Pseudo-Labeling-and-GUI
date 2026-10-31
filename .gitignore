@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+pseudo_labels/
+yolov3.weights
